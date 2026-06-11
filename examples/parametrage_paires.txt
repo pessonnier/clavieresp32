@@ -1,0 +1,20 @@
+# Parametres de l'application
+app.apSsid=ESP32-HID-Config
+app.apPass=esp32hid
+app.typePin=14
+app.terminalPin=4
+app.wifiPin=5
+app.typeText=abc
+app.demoOn=1
+app.demoText=salut
+app.selectedPair=0
+
+# Paires HID: nom=texte_a_ecrire
+A=B
+g=iiim^p
+tabulation=avant\tapres
+retour=ligne1\rligne2
+ctrl-c=\cC
+ctrl-d=\cD
+echappement=\e
+caret=\^

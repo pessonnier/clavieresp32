@@ -6,7 +6,17 @@ Le firmware démarre le périphérique USB natif de l'ESP32-S3, expose une souri
 
 1. déplacement approximatif du pointeur au centre de l'écran ;
 2. clic gauche ;
-3. saisie du texte `abcdef`.
+3. saisie du texte `salut`.
+
+Cette démonstration de démarrage peut être désactivée depuis l'interface Web, et son texte est mémorisé en NVS pour les prochains démarrages.
+
+Deux boutons physiques peuvent ensuite déclencher des actions HID :
+
+- bouton entre le GPIO configurable et `GND` : écrit la chaîne configurable ;
+- bouton terminal configurable, `GPIO4` par défaut : ouvre la boîte Exécuter Windows avec `Win+R`, saisit `wt`, puis valide avec `Entrée` pour ouvrir Windows Terminal ;
+- bouton WiFi configurable, `GPIO5` par défaut : active ou coupe le point d'accès Web de configuration.
+
+La LED WS2812/RGB intégrée s'allume en rouge pendant l'écriture des caractères. Elle clignote en rouge quand `Caps Lock` est actif sur l'ordinateur hôte.
 
 > Branchez le câble USB-C sur le port relié à l'USB natif/OTG de l'ESP32-S3, pas sur le port USB-série/UART, pour que le clavier et la souris HID soient visibles par l'ordinateur hôte.
 
@@ -39,6 +49,147 @@ Modifiez ces constantes dans `include/hid_config.h` pour correspondre à l'écra
 ```cpp
 constexpr int SCREEN_WIDTH_PX = 1920;
 constexpr int SCREEN_HEIGHT_PX = 1080;
+```
+
+## Boutons GPIO
+
+Les boutons utilisent les résistances pull-up internes de l'ESP32-S3. Câblez donc chaque bouton entre le GPIO indiqué et `GND` :
+
+```text
+Bouton écriture :
+  GPIO14 ---- bouton ---- GND
+
+Bouton terminal :
+  GPIO4  ---- bouton ---- GND
+
+Bouton WiFi :
+  GPIO5  ---- bouton ---- GND
+```
+
+Ne branchez pas ces boutons sur `3V3` : au repos l'entrée est maintenue à l'état haut par `INPUT_PULLUP`, et l'appui met simplement le GPIO à `LOW` en le reliant à `GND`.
+
+Diagnostic du bouton `GPIO14` : comme le firmware lit `GPIO14` et `GPIO4` avec la même fonction, le test le plus fiable consiste à déplacer le bouton qui fonctionne sur `GPIO4` vers `GPIO14`, sans changer le fil `GND`. Le moniteur série doit afficher `GPIO14 appuye: ecriture de la chaine.` à l'appui.
+
+Les séquences texte sont envoyées avec une table de conversion pour un hôte Windows configuré en clavier AZERTY français. Pour ouvrir un autre terminal, remplacez la séquence `wt` dans `openWindowsTerminal()`.
+
+## Interface Web WiFi
+
+Au démarrage, l'ESP32 crée un point d'accès WiFi local :
+
+```text
+SSID: ESP32-HID-Config
+Mot de passe: esp32hid
+Adresse: http://192.168.4.1/
+```
+
+La page Web permet de visualiser et modifier :
+
+- le nom du point d'accès WiFi, `ESP32-HID-Config` par défaut ;
+- le mot de passe du point d'accès WiFi, `esp32hid` par défaut ;
+- `TYPE_AZERTY_BUTTON_PIN`, `GPIO14` par défaut ;
+- le GPIO du bouton terminal `wt`, `GPIO4` par défaut ;
+- le GPIO du bouton WiFi on/off, `GPIO5` par défaut ;
+- l'activation et le texte de la démonstration de démarrage, `salut` par défaut ;
+- le texte manuel associé à ce GPIO, `abc` par défaut ;
+- une liste de paires de chaînes chargée depuis un fichier texte ;
+- la paire sélectionnée ;
+- l'ajout manuel d'une paire supplémentaire ;
+- le téléchargement d'un fichier contenant toutes les paires mémorisées.
+
+Format du fichier de paramétrage :
+
+```text
+app.apSsid=ESP32-HID-Config
+app.apPass=esp32hid
+app.typePin=14
+app.terminalPin=4
+app.wifiPin=5
+app.typeText=abc
+app.demoOn=1
+app.demoText=salut
+app.selectedPair=0
+
+nom1;mot-a-ecrire-1
+nom2;mot-a-ecrire-2
+nom3=mot-a-ecrire-3
+nom4,mot-a-ecrire-4
+```
+
+Les clés `app.*` modifient les paramètres de l'application. Les autres lignes sont des paires HID. Les séparateurs acceptés sont tabulation, `;`, `,` et `=`. Les lignes commençant par `#` sont ignorées.
+Si un champ doit contenir un séparateur, échappez-le avec `\`, par exemple `nom\=special=texte`.
+
+Clés de paramétrage supportées :
+
+- `app.apSsid` : nom du point d'accès WiFi ;
+- `app.apPass` : mot de passe du point d'accès WiFi ;
+- `app.typePin` : GPIO du bouton d'écriture ;
+- `app.terminalPin` : GPIO du bouton terminal `wt` ;
+- `app.wifiPin` : GPIO du bouton WiFi on/off ;
+- `app.typeText` : texte manuel du bouton d'écriture ;
+- `app.demoOn` : `1`/`0` pour activer ou désactiver la démonstration de démarrage ;
+- `app.demoText` : texte de la démonstration de démarrage ;
+- `app.selectedPair` : index de la paire sélectionnée.
+
+Lors d'un upload de fichier :
+
+- par défaut, la liste existante est remplacée par le contenu du fichier ;
+- si `Fusionner avec les paires existantes` est coché, une paire dont le premier champ existe déjà met à jour son second champ, et une nouvelle paire est ajoutée ;
+- si la liste est pleine, les ajouts restants sont ignorés.
+- les clés `app.*` sont appliquées dans les deux modes, puis mémorisées en NVS.
+
+La WS2812 signale le résultat de l'import :
+
+- vert pendant une seconde : import ou ajout réussi ;
+- rouge pendant une seconde : liste pleine.
+
+Le bouton WiFi utilise aussi la WS2812 :
+
+- vert pendant une seconde quand le point d'accès WiFi démarre ;
+- rouge pendant une seconde quand le point d'accès WiFi s'arrête.
+
+Le second champ peut contenir des séquences échappées :
+
+```text
+tabulation=avant\tapres
+retour=ligne1\rligne2
+ctrl-c=\cC
+ctrl-d=\cD
+echappement=\e
+caret=\^
+```
+
+Séquences supportées :
+
+- `\t` : tabulation ;
+- `\r` ou `\n` : touche Entrée ;
+- `\b` : retour arrière ;
+- `\e` : Échap ;
+- `\\` : caractère `\` ;
+- `\^` : caractère `^` ;
+- `\cA` à `\cZ` : raccourcis Ctrl-A à Ctrl-Z, par exemple `\cC` pour Ctrl-C et `\cD` pour Ctrl-D.
+
+Les changements sont mémorisés en flash avec `Preferences` et sont restaurés au prochain démarrage. Le nom du point d'accès WiFi est limité à 32 caractères ; son mot de passe doit contenir 8 à 63 caractères. Ces deux paramètres prennent effet au prochain démarrage du WiFi. Quand une paire est sélectionnée, le bouton physique écrit le second mot de cette paire. S'il n'y a aucune paire chargée, il écrit le texte manuel. Dans le champ texte, appuyer sur `Entrée` sauvegarde les paramètres puis écrit immédiatement le texte via le clavier HID.
+
+La page Web permet aussi de mettre à jour le firmware par OTA en déposant le binaire PlatformIO :
+
+```text
+D:\prog\clavieresp32\.pio\build\esp32s3-usb-hid\firmware.bin
+```
+
+La carte redémarre automatiquement après une mise à jour valide. Ne coupez pas l'alimentation pendant l'upload du firmware.
+
+## LED WS2812
+
+La WS2812 intégrée est pilotée avec `neopixelWrite()` sur `GPIO48`, broche courante des cartes ESP32-S3 AI-S3 violettes. Si votre carte utilise une autre broche, modifiez cette constante dans `include/hid_config.h` :
+
+```cpp
+constexpr int STATUS_NEOPIXEL_PIN = 48;
+```
+
+Le clignotement `Caps Lock` utilise l'état LED renvoyé par l'hôte USB HID. Son intervalle est configurable :
+
+```cpp
+constexpr unsigned long CAPS_LOCK_BLINK_INTERVAL_MS = 400;
 ```
 
 ## Sécurité d'utilisation
