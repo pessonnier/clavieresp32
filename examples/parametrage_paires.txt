@@ -2,10 +2,11 @@
 app.apSsid=ESP32-HID-Config
 app.apPass=esp32hid
 app.typePin=14
-app.terminalPin=4
+app.actionPin=4
 app.wifiPin=5
 app.typeText=abc
-app.demoOn=1
+app.actionText=wt
+app.demoOn=0
 app.demoText=salut
 app.selectedPair=0
 
