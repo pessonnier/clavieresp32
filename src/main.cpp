@@ -91,6 +91,7 @@ int typeAzertyButtonPin = TYPE_AZERTY_BUTTON_PIN;
 int terminalButtonPin = OPEN_TERMINAL_BUTTON_PIN;
 int wifiToggleButtonPin = WIFI_TOGGLE_BUTTON_PIN;
 String typeAzertyButtonText = DEFAULT_TYPE_AZERTY_TEXT;
+String actionButtonText = DEFAULT_ACTION_BUTTON_TEXT;
 bool startupDemoEnabled = DEFAULT_STARTUP_DEMO_ENABLED;
 String startupDemoText = DEFAULT_STARTUP_DEMO_TEXT;
 String configApSsid = CONFIG_AP_SSID;
@@ -100,6 +101,9 @@ String pairSecondWords[MAX_WORD_PAIRS];
 size_t pairCount = 0;
 size_t selectedPairIndex = 0;
 String uploadedPairsText;
+String lastImportReport = "Aucun import depuis le demarrage.";
+String eventLog[EVENT_LOG_SIZE];
+size_t eventLogCount = 0;
 bool firmwareUpdateOk = false;
 String firmwareUpdateError;
 bool webRoutesConfigured = false;
@@ -127,14 +131,42 @@ void writeStatusLedRed() {
   writeStatusLed(STATUS_NEOPIXEL_RED_BRIGHTNESS, 0, 0);
 }
 
-// Force l'indicateur d'import réussi en vert.
+// Force l'indicateur d'action réussie en vert.
 void writeStatusLedGreen() {
   writeStatusLed(0, STATUS_NEOPIXEL_GREEN_BRIGHTNESS, 0);
+}
+
+// Indique que le WiFi de configuration est actif.
+void writeStatusLedBlue() {
+  writeStatusLed(0, 0, STATUS_NEOPIXEL_BLUE_BRIGHTNESS);
+}
+
+// Indique une mise à jour OTA en cours.
+void writeStatusLedViolet() {
+  writeStatusLed(STATUS_NEOPIXEL_RED_BRIGHTNESS, 0, STATUS_NEOPIXEL_BLUE_BRIGHTNESS);
 }
 
 // Éteint la WS2812.
 void writeStatusLedOff() {
   writeStatusLed(0, 0, 0);
+}
+
+// Ajoute un événement court visible sur l'interface Web et sur la console série.
+void addEventLog(const String& message) {
+  Serial.println(message);
+  if (EVENT_LOG_SIZE == 0) {
+    return;
+  }
+
+  if (eventLogCount < EVENT_LOG_SIZE) {
+    eventLog[eventLogCount++] = message;
+    return;
+  }
+
+  for (size_t i = 1; i < EVENT_LOG_SIZE; ++i) {
+    eventLog[i - 1] = eventLog[i];
+  }
+  eventLog[EVENT_LOG_SIZE - 1] = message;
 }
 
 // Affiche un signal LED temporaire sans modifier les paramètres mémorisés.
@@ -154,6 +186,15 @@ void signalImportSuccess() {
 // Signale que la liste de paires est pleine.
 void signalPairListFull() {
   signalStatusLed(STATUS_NEOPIXEL_RED_BRIGHTNESS, 0, 0);
+}
+
+void signalError() {
+  signalStatusLed(STATUS_NEOPIXEL_RED_BRIGHTNESS, 0, 0);
+}
+
+void setStatusLedViolet() {
+  statusLedForced = true;
+  writeStatusLedViolet();
 }
 
 // Réserve la WS2812 pour une action de saisie en cours.
@@ -179,6 +220,10 @@ void handleStatusLed() {
   if (!capsLockEnabled) {
     if (statusLedBlinkOn) {
       statusLedBlinkOn = false;
+    }
+    if (wifiConfigEnabled) {
+      writeStatusLedBlue();
+    } else {
       writeStatusLedOff();
     }
     return;
@@ -406,6 +451,13 @@ bool configBoolValue(const String& value, bool fallback) {
   return fallback;
 }
 
+void appendImportReportLine(const String& line) {
+  if (lastImportReport.length() > 0) {
+    lastImportReport += '\n';
+  }
+  lastImportReport += line;
+}
+
 // Trouve le séparateur d'une ligne de fichier de paires.
 int findPairSeparator(const String& line) {
   const char separators[] = {'\t', ';', ',', '='};
@@ -431,22 +483,24 @@ int findPairSeparator(const String& line) {
 }
 
 // Applique une entrée app.* du fichier de paramétrage aux variables runtime.
-bool applyAppConfigEntry(const String& key, const String& value) {
+bool applyAppConfigEntry(const String& key, const String& value, size_t lineNumber) {
   if (key == "app.typePin") {
     const int requestedPin = value.toInt();
     if (isValidButtonPin(requestedPin)) {
       configureTypeAzertyButtonPin(requestedPin);
       return true;
     }
+    appendImportReportLine("Ligne " + String(lineNumber) + ": GPIO bouton ecriture invalide.");
     return false;
   }
 
-  if (key == "app.terminalPin") {
+  if (key == "app.actionPin" || key == "app.terminalPin") {
     const int requestedPin = value.toInt();
     if (isValidButtonPin(requestedPin)) {
       configureTerminalButtonPin(requestedPin);
       return true;
     }
+    appendImportReportLine("Ligne " + String(lineNumber) + ": GPIO bouton action invalide.");
     return false;
   }
 
@@ -456,11 +510,17 @@ bool applyAppConfigEntry(const String& key, const String& value) {
       configureWifiToggleButtonPin(requestedPin);
       return true;
     }
+    appendImportReportLine("Ligne " + String(lineNumber) + ": GPIO bouton WiFi invalide.");
     return false;
   }
 
   if (key == "app.typeText") {
     typeAzertyButtonText = value;
+    return true;
+  }
+
+  if (key == "app.actionText") {
+    actionButtonText = value;
     return true;
   }
 
@@ -490,9 +550,11 @@ bool applyAppConfigEntry(const String& key, const String& value) {
       selectedPairIndex = requestedPair;
       return true;
     }
+    appendImportReportLine("Ligne " + String(lineNumber) + ": index de paire selectionnee invalide.");
     return false;
   }
 
+  appendImportReportLine("Ligne " + String(lineNumber) + ": cle app inconnue " + key + ".");
   return false;
 }
 
@@ -502,11 +564,15 @@ size_t parseWordPairs(const String& content, bool mergeMode, bool& fullReached) 
     clearWordPairs();
   }
 
+  lastImportReport = "";
   size_t importedPairs = 0;
   size_t importedSettings = 0;
+  size_t ignoredLines = 0;
 
   size_t start = 0;
+  size_t lineNumber = 0;
   while (start < content.length()) {
+    ++lineNumber;
     int end = content.indexOf('\n', start);
     if (end < 0) {
       end = content.length();
@@ -523,13 +589,25 @@ size_t parseWordPairs(const String& content, bool mergeMode, bool& fullReached) 
         String value = unescapePairFieldSyntax(line.substring(separator + 1));
         key.trim();
         if (key.startsWith("app.")) {
-          value.trim();
-          if (applyAppConfigEntry(key, value)) {
+          if (applyAppConfigEntry(key, value, lineNumber)) {
             ++importedSettings;
+          } else {
+            ++ignoredLines;
           }
-        } else if (mergeWordPair(key, value, fullReached)) {
-          ++importedPairs;
+        } else {
+          if (key.length() > MAX_PAIR_FIELD_LENGTH || value.length() > MAX_PAIR_FIELD_LENGTH) {
+            appendImportReportLine("Ligne " + String(lineNumber) + ": paire trop longue, tronquee a la limite NVS.");
+          }
+          if (mergeWordPair(key, value, fullReached)) {
+            ++importedPairs;
+          } else {
+            appendImportReportLine("Ligne " + String(lineNumber) + ": paire vide, doublon invalide ou liste pleine.");
+            ++ignoredLines;
+          }
         }
+      } else {
+        appendImportReportLine("Ligne " + String(lineNumber) + ": aucun separateur reconnu.");
+        ++ignoredLines;
       }
     }
 
@@ -542,6 +620,13 @@ size_t parseWordPairs(const String& content, bool mergeMode, bool& fullReached) 
 
   Serial.print("Parametres app importes: ");
   Serial.println(importedSettings);
+  String summary = "Import: " + String(importedSettings) + " parametres, " + String(importedPairs) + " paires, " + String(ignoredLines) + " lignes ignorees.";
+  addEventLog(summary);
+  if (lastImportReport.length() == 0) {
+    lastImportReport = summary;
+  } else {
+    lastImportReport = summary + "\n" + lastImportReport;
+  }
   return importedPairs;
 }
 
@@ -589,6 +674,7 @@ void loadSettings() {
   const int storedWifiPin = preferences.getInt("wifiPin", WIFI_TOGGLE_BUTTON_PIN);
   configureWifiToggleButtonPin(isValidButtonPin(storedWifiPin) ? storedWifiPin : WIFI_TOGGLE_BUTTON_PIN);
   typeAzertyButtonText = preferences.getString("typeText", DEFAULT_TYPE_AZERTY_TEXT);
+  actionButtonText = preferences.getString("actionText", DEFAULT_ACTION_BUTTON_TEXT);
   startupDemoEnabled = preferences.getBool("demoOn", DEFAULT_STARTUP_DEMO_ENABLED);
   startupDemoText = preferences.getString("demoText", DEFAULT_STARTUP_DEMO_TEXT);
   configApSsid = normalizedApSsid(preferences.getString("apSsid", CONFIG_AP_SSID));
@@ -617,6 +703,7 @@ void saveSettings() {
   preferences.putInt("termPin", terminalButtonPin);
   preferences.putInt("wifiPin", wifiToggleButtonPin);
   preferences.putString("typeText", typeAzertyButtonText);
+  preferences.putString("actionText", actionButtonText);
   preferences.putBool("demoOn", startupDemoEnabled);
   preferences.putString("demoText", startupDemoText);
   preferences.putString("apSsid", configApSsid);
@@ -661,6 +748,10 @@ void applyWebSettings() {
 
   if (webServer.hasArg("text")) {
     typeAzertyButtonText = webServer.arg("text");
+  }
+
+  if (webServer.hasArg("actionText")) {
+    actionButtonText = webServer.arg("actionText");
   }
 
   if (webServer.hasArg("apSsid")) {
@@ -720,11 +811,31 @@ void logHttpRequest(const char* handlerName) {
   }
 }
 
+String buttonStateText(int pin) {
+  return digitalRead(pin) == LOW ? "appuye" : "repos";
+}
+
+void appendEventLogHtml(String& page) {
+  page += F("<section><h2>Journal</h2>");
+  if (eventLogCount == 0) {
+    page += F("<p class='muted'>Aucun evenement depuis le demarrage.</p>");
+  } else {
+    page += F("<ol class='log'>");
+    for (size_t i = 0; i < eventLogCount; ++i) {
+      page += F("<li>");
+      page += htmlEscape(eventLog[i]);
+      page += F("</li>");
+    }
+    page += F("</ol>");
+  }
+  page += F("</section>");
+}
+
 // Génère la page de configuration sans JavaScript obligatoire.
 void sendConfigPage() {
   logHttpRequest("sendConfigPage");
   String page;
-  page.reserve(10200);
+  page.reserve(13200);
   page += F("<!doctype html><html lang='fr'><head><meta charset='utf-8'>");
   page += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
   page += F("<title>ESP32 HID</title><style>");
@@ -736,6 +847,7 @@ void sendConfigPage() {
   page += F(".drop{height:150px;margin-top:16px;border:2px dashed #8b96a8;border-radius:8px;background:#f9fafb;display:flex;align-items:center;justify-content:center;text-align:center;color:#4b5563;padding:12px}");
   page += F(".drop.active{border-color:#145bd7;background:#eef4ff;color:#145bd7}");
   page += F(".muted{color:#5f6875}.row{display:flex;gap:10px;flex-wrap:wrap}.row button{flex:1}");
+  page += F(".state{margin:6px 0 0;color:#374151;font-size:14px}.log{padding-left:22px}.report{white-space:pre-wrap;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:10px}");
   page += F("</style></head><body><main>");
   page += F("<h1>ESP32 HID</h1>");
   page += F("<p class='muted'>Point d'acces WiFi: ");
@@ -751,18 +863,37 @@ void sendConfigPage() {
   page += htmlEscape(configApPassword);
   page += F("\">");
   page += F("<p class='muted'>Le nouveau nom et le nouveau mot de passe sont memorises et seront utilises au prochain demarrage du WiFi. Mot de passe: 8 a 63 caracteres.</p>");
-  page += F("<label for='pin'>TYPE_AZERTY_BUTTON_PIN</label>");
+  page += F("<label for='pin'>Bouton ecriture - GPIO</label>");
   page += F("<input id='pin' name='pin' type='number' min='0' max='48' value='");
   page += String(typeAzertyButtonPin);
   page += F("'>");
-  page += F("<label for='terminalPin'>GPIO bouton terminal wt</label>");
+  page += F("<p class='state'>Etat GPIO");
+  page += String(typeAzertyButtonPin);
+  page += F(": ");
+  page += buttonStateText(typeAzertyButtonPin);
+  page += F("</p>");
+  page += F("<label for='terminalPin'>Bouton action Win+R - GPIO</label>");
   page += F("<input id='terminalPin' name='terminalPin' type='number' min='0' max='48' value='");
   page += String(terminalButtonPin);
   page += F("'>");
+  page += F("<p class='state'>Etat GPIO");
+  page += String(terminalButtonPin);
+  page += F(": ");
+  page += buttonStateText(terminalButtonPin);
+  page += F("</p>");
+  page += F("<label for='actionText'>Commande bouton action</label>");
+  page += F("<input id='actionText' name='actionText' type='text' value=\"");
+  page += htmlEscape(actionButtonText);
+  page += F("\">");
   page += F("<label for='wifiPin'>GPIO bouton WiFi on/off</label>");
   page += F("<input id='wifiPin' name='wifiPin' type='number' min='0' max='48' value='");
   page += String(wifiToggleButtonPin);
   page += F("'>");
+  page += F("<p class='state'>Etat GPIO");
+  page += String(wifiToggleButtonPin);
+  page += F(": ");
+  page += buttonStateText(wifiToggleButtonPin);
+  page += F("</p>");
   page += F("<label style='font-weight:400'><input id='demoOn' name='demoOn' type='checkbox' value='1' style='width:auto;margin-right:8px'");
   if (startupDemoEnabled) {
     page += F(" checked");
@@ -815,6 +946,10 @@ void sendConfigPage() {
   page += F("</form>");
   page += F("<p class='muted'>Par defaut l'import remplace la liste de paires. En fusion, une cle de paire existante met a jour sa valeur et une cle nouvelle est ajoutee. Les cles app.* mettent toujours a jour les parametres.</p>");
   page += F("<p class='muted'>Format: cles app.* pour les parametres, puis une paire HID par ligne. Exemple: app.typePin=14 puis nom;mot-a-ecrire</p>");
+  page += F("<h2>Dernier import</h2><pre class='report'>");
+  page += htmlEscape(lastImportReport);
+  page += F("</pre>");
+  appendEventLogHtml(page);
   page += F("<form method='post' action='/firmware' enctype='multipart/form-data'>");
   page += F("<label for='firmware'>Mise a jour firmware</label>");
   page += F("<div id='firmwareDrop' class='drop'>Deposez ici le fichier firmware.bin<br>ou choisissez un fichier ci-dessous</div>");
@@ -836,6 +971,7 @@ void sendConfigPage() {
 void handleSaveSettings() {
   logHttpRequest("handleSaveSettings");
   applyWebSettings();
+  addEventLog("Parametres sauvegardes depuis l'interface Web.");
   webServer.sendHeader("Location", "/");
   webServer.send(303);
 }
@@ -847,6 +983,7 @@ void handleSaveAndType() {
   const String textToType = selectedTypeText();
   Serial.print("HTTP /type ecriture HID: ");
   Serial.println(textToType);
+  addEventLog("Ecriture HID demandee depuis l'interface Web.");
   setStatusLedRed();
   typeAzertyString(textToType.c_str());
   setStatusLedOff();
@@ -859,6 +996,8 @@ void handleAddPair() {
   logHttpRequest("handleAddPair");
 
   if (!webServer.hasArg("first") || !webServer.hasArg("second")) {
+    addEventLog("Ajout de paire refuse: champs manquants.");
+    signalError();
     webServer.send(400, "text/plain; charset=utf-8", "Champs first/second manquants");
     return;
   }
@@ -866,7 +1005,10 @@ void handleAddPair() {
   if (!addWordPair(webServer.arg("first"), webServer.arg("second"))) {
     if (pairCount >= MAX_WORD_PAIRS) {
       signalPairListFull();
+    } else {
+      signalError();
     }
+    addEventLog("Ajout de paire refuse.");
     webServer.send(400, "text/plain; charset=utf-8", "Paire vide ou limite atteinte");
     return;
   }
@@ -875,6 +1017,7 @@ void handleAddPair() {
   saveSettings();
   Serial.print("Paire ajoutee index=");
   Serial.println(selectedPairIndex);
+  addEventLog("Paire ajoutee: " + pairFirstWords[selectedPairIndex] + ".");
   signalImportSuccess();
   webServer.sendHeader("Location", "/");
   webServer.send(303);
@@ -896,7 +1039,7 @@ void handleDownloadPairs() {
   output += F("app.typePin=");
   output += String(typeAzertyButtonPin);
   output += '\n';
-  output += F("app.terminalPin=");
+  output += F("app.actionPin=");
   output += String(terminalButtonPin);
   output += '\n';
   output += F("app.wifiPin=");
@@ -904,6 +1047,9 @@ void handleDownloadPairs() {
   output += '\n';
   output += F("app.typeText=");
   output += configFileEscape(typeAzertyButtonText);
+  output += '\n';
+  output += F("app.actionText=");
+  output += configFileEscape(actionButtonText);
   output += '\n';
   output += F("app.demoOn=");
   output += startupDemoEnabled ? F("1") : F("0");
@@ -931,13 +1077,13 @@ void handleUploadDone() {
   const bool mergeMode = webServer.hasArg("merge") && webServer.arg("merge") == "1";
   bool fullReached = false;
   const size_t loadedPairs = parseWordPairs(uploadedPairsText, mergeMode, fullReached);
-  selectedPairIndex = 0;
   saveSettings();
   Serial.print(mergeMode ? "Parametrage importe, paires fusionnees/importees: " : "Parametrage importe, paires remplacees/importees: ");
   Serial.println(loadedPairs);
 
   if (fullReached) {
     Serial.println("Import limite: liste de paires pleine.");
+    addEventLog("Import termine avec liste pleine.");
     signalPairListFull();
   } else {
     signalImportSuccess();
@@ -979,12 +1125,15 @@ void handleFirmwareUpdateDone() {
     const String message = firmwareUpdateError.isEmpty() ? "Echec de mise a jour firmware" : firmwareUpdateError;
     Serial.print("OTA echec: ");
     Serial.println(message);
+    addEventLog("OTA echec: " + message);
+    signalError();
     webServer.send(500, "text/plain; charset=utf-8", message);
     return;
   }
 
   webServer.send(200, "text/plain; charset=utf-8", "Firmware recu. Redemarrage...");
   Serial.println("OTA succes: redemarrage.");
+  addEventLog("OTA succes: redemarrage.");
   delay(500);
   ESP.restart();
 }
@@ -998,6 +1147,8 @@ void handleFirmwareFileUpload() {
     firmwareUpdateError = "";
     Serial.print("OTA start: ");
     Serial.println(upload.filename);
+    addEventLog("OTA demarree: " + upload.filename);
+    setStatusLedViolet();
 
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
       firmwareUpdateError = "Update.begin() a echoue";
@@ -1010,6 +1161,7 @@ void handleFirmwareFileUpload() {
     if (firmwareUpdateError.isEmpty() && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       firmwareUpdateError = "Update.write() incomplet";
       Update.printError(Serial);
+      addEventLog("OTA erreur ecriture.");
     }
     return;
   }
@@ -1023,12 +1175,14 @@ void handleFirmwareFileUpload() {
     if (!Update.end(true)) {
       firmwareUpdateError = "Update.end() a echoue";
       Update.printError(Serial);
+      addEventLog("OTA image invalide.");
       return;
     }
 
     firmwareUpdateOk = !Update.hasError();
     Serial.print("OTA end bytes=");
     Serial.println(upload.totalSize);
+    setStatusLedOff();
   }
 }
 
@@ -1068,6 +1222,7 @@ void startConfigWebServer(bool signalLed = false) {
   Serial.println(configApSsid);
   Serial.print("Web config: http://");
   Serial.println(WiFi.softAPIP());
+  addEventLog("WiFi configuration actif: " + configApSsid + ".");
 
   if (signalLed) {
     signalImportSuccess();
@@ -1085,6 +1240,7 @@ void stopConfigWebServer(bool signalLed = false) {
   WiFi.mode(WIFI_OFF);
   wifiConfigEnabled = false;
   Serial.println("WiFi config arrete.");
+  addEventLog("WiFi configuration arrete.");
 
   if (signalLed) {
     signalPairListFull();
@@ -1144,6 +1300,12 @@ void tapRawKey(uint8_t key) {
   delay(KEY_PRESS_DELAY_MS);
 }
 
+// Envoie explicitement un rapport HID vide pour éviter qu'un modificateur reste bloqué côté hôte.
+void releaseKeyboardState() {
+  Keyboard.releaseAll();
+  delay(KEY_PRESS_DELAY_MS);
+}
+
 // Envoie une touche AZERTY avec son modificateur éventuel, puis une touche de suite si nécessaire.
 void tapAzertyKey(AzertyKey key) {
   if (key.modifier != 0) {
@@ -1171,6 +1333,8 @@ void tapAzertyKey(AzertyKey key) {
       delay(KEY_PRESS_DELAY_MS);
     }
   }
+
+  releaseKeyboardState();
 }
 
 // Convertit une lettre A-Z en code HID brut pour les raccourcis Ctrl+lettre.
@@ -1249,6 +1413,7 @@ void tapCtrlLetter(char letter) {
   tapRawKey(rawKey);
   Keyboard.release(KEY_LEFT_CTRL);
   delay(KEY_PRESS_DELAY_MS);
+  releaseKeyboardState();
 }
 
 // Interprète les séquences échappées du fichier de paramétrage.
@@ -1540,6 +1705,7 @@ void typeAzertyString(const char* text) {
       tapAzertyKey(key);
     }
   }
+  releaseKeyboardState();
 }
 
 // Écrit le texte configuré pour le GPIO de saisie.
@@ -1547,27 +1713,35 @@ void typeAzertyText() {
   const String textToType = selectedTypeText();
   Serial.print("Bouton ecriture HID: ");
   Serial.println(textToType);
+  addEventLog("Bouton ecriture: texte HID envoye.");
   setStatusLedRed();
   typeAzertyString(textToType.c_str());
   setStatusLedOff();
 }
 
-// Ouvre Windows Terminal via Win+R puis saisie de "wt".
-void openWindowsTerminal() {
+// Lance la commande configurable via Win+R, puis validation par Entrée.
+void runActionButtonCommand() {
+  if (actionButtonText.isEmpty()) {
+    addEventLog("Bouton action ignore: commande vide.");
+    signalError();
+    return;
+  }
+
   Keyboard.press(KEY_LEFT_GUI);
   delay(KEY_PRESS_DELAY_MS);
   Keyboard.pressRaw(RAW_KEY_R);
   delay(KEY_PRESS_DELAY_MS);
   Keyboard.releaseRaw(RAW_KEY_R);
   Keyboard.release(KEY_LEFT_GUI);
+  releaseKeyboardState();
 
   delay(RUN_DIALOG_DELAY_MS);
 
-  // "wt" en disposition AZERTY FR, puis Entrée.
+  addEventLog("Bouton action: execution de " + actionButtonText + ".");
   setStatusLedRed();
-  tapRawKey(RAW_KEY_Z);
-  tapRawKey(RAW_KEY_T);
+  typeAzertyString(actionButtonText.c_str());
   tapRawKey(RAW_KEY_ENTER);
+  releaseKeyboardState();
   setStatusLedOff();
 }
 }  // namespace
@@ -1593,11 +1767,14 @@ void setup() {
 
   Serial.print("Bouton ecriture: GPIO");
   Serial.println(typeAzertyButtonPin);
-  Serial.print("Bouton terminal: GPIO");
+  Serial.print("Bouton action Win+R: GPIO");
   Serial.println(terminalButtonPin);
+  Serial.print("Commande action: ");
+  Serial.println(actionButtonText);
   Serial.print("Bouton WiFi: GPIO");
   Serial.println(wifiToggleButtonPin);
   Serial.println("Cablage attendu: chaque bouton relie son GPIO a GND pendant l'appui.");
+  addEventLog("Demarrage termine.");
 }
 
 void loop() {
@@ -1618,8 +1795,8 @@ void loop() {
   if (readButtonPress(terminalButtonPin, terminalButtonWasPressed)) {
     Serial.print("GPIO");
     Serial.print(terminalButtonPin);
-    Serial.println(" appuye: ouverture du terminal.");
-    openWindowsTerminal();
+    Serial.println(" appuye: action Win+R.");
+    runActionButtonCommand();
   }
 
   if (readButtonPress(wifiToggleButtonPin, wifiToggleButtonWasPressed)) {

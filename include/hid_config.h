@@ -10,7 +10,7 @@ constexpr unsigned long USB_ENUMERATION_DELAY_MS = 3000;
 
 // Démo exécutée une seule fois au démarrage : déplacement souris, clic, puis saisie.
 // Elle peut être désactivée et son texte peut être modifié depuis l'interface Web.
-constexpr bool DEFAULT_STARTUP_DEMO_ENABLED = true;
+constexpr bool DEFAULT_STARTUP_DEMO_ENABLED = false;
 constexpr const char* DEFAULT_STARTUP_DEMO_TEXT = "salut";
 
 // Boutons câblés entre le GPIO et GND. Les entrées utilisent la résistance pull-up interne,
@@ -29,6 +29,7 @@ constexpr size_t MAX_PAIR_UPLOAD_BYTES = 4096;
 //   patte 1 du bouton -> GPIO4
 //   patte 2 du bouton -> GND
 constexpr int OPEN_TERMINAL_BUTTON_PIN = 4;
+constexpr const char* DEFAULT_ACTION_BUTTON_TEXT = "wt";
 
 // Bouton d'activation/désactivation du WiFi de configuration :
 //   patte 1 du bouton -> GPIO5
@@ -42,8 +43,10 @@ constexpr unsigned long BUTTON_DEBOUNCE_DELAY_MS = 40;
 constexpr int STATUS_NEOPIXEL_PIN = 48;
 constexpr uint8_t STATUS_NEOPIXEL_RED_BRIGHTNESS = 32;
 constexpr uint8_t STATUS_NEOPIXEL_GREEN_BRIGHTNESS = 32;
+constexpr uint8_t STATUS_NEOPIXEL_BLUE_BRIGHTNESS = 32;
 constexpr unsigned long CAPS_LOCK_BLINK_INTERVAL_MS = 400;
 constexpr unsigned long IMPORT_STATUS_SIGNAL_MS = 1000;
+constexpr size_t EVENT_LOG_SIZE = 12;
 
 // Interface Web de configuration. L'ESP32 crée ce point d'accès WiFi au démarrage.
 constexpr const char* CONFIG_AP_SSID = "ESP32-HID-Config";
