@@ -746,9 +746,6 @@ void applyWebSettings() {
     }
   }
 
-  if (webServer.hasArg("text")) {
-    typeAzertyButtonText = webServer.arg("text");
-  }
 
   if (webServer.hasArg("actionText")) {
     actionButtonText = webServer.arg("actionText");
@@ -846,7 +843,7 @@ void sendConfigPage() {
   page += F("select{box-sizing:border-box;width:100%;font-size:18px;padding:10px;margin-top:6px;border:1px solid #b8bec8;border-radius:6px}");
   page += F(".drop{height:150px;margin-top:16px;border:2px dashed #8b96a8;border-radius:8px;background:#f9fafb;display:flex;align-items:center;justify-content:center;text-align:center;color:#4b5563;padding:12px}");
   page += F(".drop.active{border-color:#145bd7;background:#eef4ff;color:#145bd7}");
-  page += F(".muted{color:#5f6875}.row{display:flex;gap:10px;flex-wrap:wrap}.row button{flex:1}");
+  page += F(".muted{color:#5f6875}.row{display:flex;gap:10px;flex-wrap:wrap}.row button{flex:1}.danger{background:#b91c1c}");
   page += F(".state{margin:6px 0 0;color:#374151;font-size:14px}.log{padding-left:22px}.report{white-space:pre-wrap;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:10px}");
   page += F("</style></head><body><main>");
   page += F("<h1>ESP32 HID</h1>");
@@ -903,10 +900,6 @@ void sendConfigPage() {
   page += F("<input id='demoText' name='demoText' type='text' value=\"");
   page += htmlEscape(startupDemoText);
   page += F("\">");
-  page += F("<label for='text'>Texte associe a ce GPIO</label>");
-  page += F("<input id='text' name='text' type='text' value=\"");
-  page += htmlEscape(typeAzertyButtonText);
-  page += F("\">");
   page += F("<label for='pair'>Paire selectionnee</label>");
   page += F("<select id='pair' name='pair'>");
   if (pairCount == 0) {
@@ -927,9 +920,13 @@ void sendConfigPage() {
     }
   }
   page += F("</select>");
-  page += F("<div class='row'><button type='submit' formaction='/save'>Sauvegarder</button><button type='submit'>Ecrire maintenant</button></div>");
+  page += F("<div class='row'><button type='submit' formaction='/save'>Sauvegarder</button><button type='submit'>Ecrire maintenant</button>");
+  if (pairCount > 0) {
+    page += F("<button class='danger' type='submit' formaction='/delete-pair'>Supprimer la paire selectionnee</button>");
+  }
+  page += F("</div>");
   page += F("</form>");
-  page += F("<p class='muted'>Appuyer sur Entree dans le champ texte sauvegarde les parametres puis ecrit le texte via le clavier HID.</p>");
+  page += F("<p class='muted'>Appuyer sur Entree dans la selection de paire sauvegarde les parametres puis ecrit le texte via le clavier HID.</p>");
   page += F("<form method='post' action='/add-pair' accept-charset='UTF-8'>");
   page += F("<label for='newFirst'>Ajouter une paire - nom</label>");
   page += F("<input id='newFirst' name='first' type='text' placeholder='nom-affiche'>");
@@ -1023,6 +1020,52 @@ void handleAddPair() {
   webServer.send(303);
 }
 
+// Route POST /delete-pair : supprime la paire selectionnee et ajuste l'index actif.
+void handleDeletePair() {
+  logHttpRequest("handleDeletePair");
+
+  if (!webServer.hasArg("pair")) {
+    addEventLog("Suppression de paire refusee: index manquant.");
+    signalError();
+    webServer.send(400, "text/plain; charset=utf-8", "Index de paire manquant");
+    return;
+  }
+
+  const int requestedPair = webServer.arg("pair").toInt();
+  if (requestedPair < 0 || static_cast<size_t>(requestedPair) >= pairCount) {
+    addEventLog("Suppression de paire refusee: index invalide.");
+    signalError();
+    webServer.send(400, "text/plain; charset=utf-8", "Index de paire invalide");
+    return;
+  }
+
+  const size_t removedIndex = static_cast<size_t>(requestedPair);
+  const String removedName = pairFirstWords[removedIndex];
+  for (size_t i = removedIndex; i + 1 < pairCount; ++i) {
+    pairFirstWords[i] = pairFirstWords[i + 1];
+    pairSecondWords[i] = pairSecondWords[i + 1];
+  }
+  --pairCount;
+  pairFirstWords[pairCount] = "";
+  pairSecondWords[pairCount] = "";
+
+  if (pairCount == 0) {
+    selectedPairIndex = 0;
+  } else if (removedIndex >= pairCount) {
+    selectedPairIndex = pairCount - 1;
+  } else {
+    selectedPairIndex = removedIndex;
+  }
+
+  saveSettings();
+  Serial.print("Paire supprimee index=");
+  Serial.println(removedIndex);
+  addEventLog("Paire supprimee: " + removedName + ".");
+  signalImportSuccess();
+  webServer.sendHeader("Location", "/");
+  webServer.send(303);
+}
+
 // Route GET /download : exporte les paramètres et toutes les paires en fichier texte réimportable.
 void handleDownloadPairs() {
   logHttpRequest("handleDownloadPairs");
@@ -1044,9 +1087,6 @@ void handleDownloadPairs() {
   output += '\n';
   output += F("app.wifiPin=");
   output += String(wifiToggleButtonPin);
-  output += '\n';
-  output += F("app.typeText=");
-  output += configFileEscape(typeAzertyButtonText);
   output += '\n';
   output += F("app.actionText=");
   output += configFileEscape(actionButtonText);
@@ -1196,6 +1236,7 @@ void configureWebRoutes() {
   webServer.on("/save", HTTP_POST, handleSaveSettings);
   webServer.on("/type", HTTP_POST, handleSaveAndType);
   webServer.on("/add-pair", HTTP_POST, handleAddPair);
+  webServer.on("/delete-pair", HTTP_POST, handleDeletePair);
   webServer.on("/download", HTTP_GET, handleDownloadPairs);
   webServer.on("/upload", HTTP_POST, handleUploadDone, handlePairsFileUpload);
   webServer.on("/firmware", HTTP_POST, handleFirmwareUpdateDone, handleFirmwareFileUpload);
@@ -1416,6 +1457,21 @@ void tapCtrlLetter(char letter) {
   releaseKeyboardState();
 }
 
+// Envoie un raccourci Win+lettre, par exemple Win-R.
+void tapGuiLetter(char letter) {
+  const uint8_t rawKey = rawKeyForControlLetter(letter);
+  if (rawKey == 0) {
+    return;
+  }
+
+  Keyboard.press(KEY_LEFT_GUI);
+  delay(KEY_PRESS_DELAY_MS);
+  tapRawKey(rawKey);
+  Keyboard.release(KEY_LEFT_GUI);
+  delay(KEY_PRESS_DELAY_MS);
+  releaseKeyboardState();
+}
+
 // Interprète les séquences échappées du fichier de paramétrage.
 bool typeEscapedSequence(const unsigned char*& cursor) {
   if (cursor[0] != '\\' || cursor[1] == '\0') {
@@ -1453,6 +1509,14 @@ bool typeEscapedSequence(const unsigned char*& cursor) {
     case 'C':
       if (cursor[2] != '\0') {
         tapCtrlLetter(static_cast<char>(cursor[2]));
+        cursor += 2;
+        return true;
+      }
+      return false;
+    case 'w':
+    case 'W':
+      if (cursor[2] != '\0') {
+        tapGuiLetter(static_cast<char>(cursor[2]));
         cursor += 2;
         return true;
       }

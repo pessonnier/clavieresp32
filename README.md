@@ -138,10 +138,9 @@ La page Web permet de visualiser et modifier :
 - la commande du bouton action, `wt` par défaut ;
 - le GPIO du bouton WiFi on/off, `GPIO5` par défaut ;
 - l'activation et le texte de la démonstration de démarrage, `salut` par défaut ;
-- le texte manuel associé à ce GPIO, `abc` par défaut ;
 - une liste de paires de chaînes chargée depuis un fichier texte ;
 - la paire sélectionnée ;
-- l'ajout manuel d'une paire supplémentaire ;
+- l'ajout manuel et la suppression d'une paire ;
 - le téléchargement d'un fichier contenant tous les paramètres et toutes les paires mémorisées ;
 - le dernier rapport d'import et un journal des événements récents.
 
@@ -153,8 +152,8 @@ app.apPass=esp32hid
 app.typePin=14
 app.actionPin=4
 app.wifiPin=5
-app.typeText=abc
-app.actionText=wt
+# Le bouton action lance Win+R, tape cette commande, puis valide avec Entree.
+app.actionText=notepad
 app.demoOn=0
 app.demoText=salut
 app.selectedPair=0
@@ -176,7 +175,7 @@ Clés de paramétrage supportées :
 - `app.actionPin` : GPIO du bouton action `Win+R` ;
 - `app.terminalPin` : ancien nom accepté en compatibilité pour le même GPIO ;
 - `app.wifiPin` : GPIO du bouton WiFi on/off ;
-- `app.typeText` : texte manuel du bouton d'écriture ;
+- `app.typeText` : ancien texte manuel du bouton d'écriture, encore accepté à l'import pour compatibilité ;
 - `app.actionText` : commande saisie par le bouton action après `Win+R` ;
 - `app.demoOn` : `1`/`0` pour activer ou désactiver la démonstration de démarrage ;
 - `app.demoText` : texte de la démonstration de démarrage ;
@@ -189,6 +188,8 @@ Lors d'un upload de fichier :
 - si la liste est pleine, les ajouts restants sont ignorés.
 - les clés `app.*` sont appliquées dans les deux modes, puis mémorisées en NVS.
 - les lignes ignorées, les GPIO invalides, les clés inconnues et les paires trop longues sont affichés dans le rapport du dernier import.
+
+La page permet aussi de supprimer la paire actuellement sélectionnée. Après suppression, la sélection reste sur une paire valide si la liste n'est pas vide.
 
 La WS2812 signale les états principaux :
 
@@ -206,6 +207,7 @@ tabulation=avant\tapres
 retour=ligne1\rligne2
 ctrl-c=\cC
 ctrl-d=\cD
+win-r=\wR
 echappement=\e
 caret=\^
 ```
@@ -218,9 +220,10 @@ Séquences supportées :
 - `\e` : Échap ;
 - `\\` : caractère `\` ;
 - `\^` : caractère `^` ;
-- `\cA` à `\cZ` : raccourcis Ctrl-A à Ctrl-Z, par exemple `\cC` pour Ctrl-C et `\cD` pour Ctrl-D.
+- `\cA` à `\cZ` : raccourcis Ctrl-A à Ctrl-Z, par exemple `\cC` pour Ctrl-C et `\cD` pour Ctrl-D ;
+- `\wA` à `\wZ` : raccourcis Win-A à Win-Z, par exemple `\wR` pour Win-R.
 
-Les changements sont mémorisés en flash avec `Preferences` et sont restaurés au prochain démarrage. Le nom du point d'accès WiFi est limité à 32 caractères ; son mot de passe doit contenir 8 à 63 caractères. Ces deux paramètres prennent effet au prochain démarrage du WiFi. Quand une paire est sélectionnée, le bouton physique écrit le second mot de cette paire. S'il n'y a aucune paire chargée, il écrit le texte manuel. Dans le champ texte, appuyer sur `Entrée` sauvegarde les paramètres puis écrit immédiatement le texte via le clavier HID. Le journal Web affiche les derniers événements depuis le démarrage.
+Les changements sont mémorisés en flash avec `Preferences` et sont restaurés au prochain démarrage. Le nom du point d'accès WiFi est limité à 32 caractères ; son mot de passe doit contenir 8 à 63 caractères. Ces deux paramètres prennent effet au prochain démarrage du WiFi. Quand une paire est sélectionnée, le bouton physique écrit le second mot de cette paire. S'il n'y a aucune paire chargée, il écrit le texte manuel. Dans la sélection de paire, appuyer sur `Entrée` sauvegarde les paramètres puis écrit immédiatement le texte via le clavier HID. Le journal Web affiche les derniers événements depuis le démarrage.
 
 La page Web permet aussi de mettre à jour le firmware par OTA en déposant le binaire PlatformIO :
 
