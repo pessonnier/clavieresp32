@@ -53,7 +53,8 @@ Les boutons sont cables entre GPIO et GND. Les entrees utilisent `INPUT_PULLUP`.
   - saisit `actionButtonText` ;
   - valide avec Entree.
 - Bouton WiFi, par defaut GPIO5 :
-  - active ou coupe le point d'acces de configuration.
+  - active ou coupe le point d'acces de configuration ;
+  - le WiFi de configuration est eteint par defaut au demarrage.
 
 ### Interface Web
 
@@ -180,7 +181,7 @@ Zones principales :
 3. La LED est eteinte.
 4. Le clavier, la souris et l'USB natif sont initialises.
 5. Le firmware attend `USB_ENUMERATION_DELAY_MS`.
-6. Le point d'acces Web demarre.
+6. Le firmware force le mode `WIFI_OFF` : aucun point d'acces Web ne demarre par defaut.
 7. Les etats initiaux des boutons sont lus.
 8. Un evenement de demarrage est ajoute au journal.
 

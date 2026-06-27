@@ -1288,6 +1288,16 @@ void stopConfigWebServer(bool signalLed = false) {
   }
 }
 
+// Garantit que le point d'acces de configuration ne demarre pas tout seul.
+void keepConfigWifiOffAtStartup() {
+  webServer.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+  wifiConfigEnabled = false;
+  Serial.println("WiFi config eteint au demarrage. Appuyez sur le bouton WiFi pour l'activer.");
+  addEventLog("WiFi configuration eteint au demarrage.");
+}
+
 // Bascule le WiFi de configuration depuis le bouton physique dédié.
 void toggleConfigWifi() {
   if (wifiConfigEnabled) {
@@ -1823,7 +1833,7 @@ void setup() {
 
   delay(USB_ENUMERATION_DELAY_MS);
 
-  startConfigWebServer(true);
+  keepConfigWifiOffAtStartup();
 
   typeButtonWasPressed = digitalRead(typeAzertyButtonPin) == LOW;
   terminalButtonWasPressed = digitalRead(terminalButtonPin) == LOW;

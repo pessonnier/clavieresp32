@@ -16,7 +16,7 @@ Deux boutons physiques peuvent ensuite déclencher des actions HID :
 
 - bouton entre le GPIO configurable et `GND` : écrit la chaîne configurable ;
 - bouton action configurable, `GPIO4` par défaut : ouvre la boîte Exécuter Windows avec `Win+R`, saisit la commande configurée, puis valide avec `Entrée` ;
-- bouton WiFi configurable, `GPIO5` par défaut : active ou coupe le point d'accès Web de configuration.
+- bouton WiFi configurable, `GPIO5` par défaut : active ou coupe le point d'accès Web de configuration, éteint par défaut au démarrage.
 
 La LED WS2812/RGB intégrée s'allume en rouge pendant l'écriture des caractères, en bleu quand le WiFi de configuration est actif, en violet pendant une mise à jour OTA, en vert pour une action réussie et en rouge pour une erreur. Elle clignote en rouge quand `Caps Lock` est actif sur l'ordinateur hôte.
 
@@ -121,7 +121,7 @@ Les séquences texte sont envoyées avec une table de conversion pour un hôte W
 
 ## Interface Web WiFi
 
-Au démarrage, l'ESP32 crée un point d'accès WiFi local :
+Au démarrage, le firmware force le WiFi éteint : aucun point d'accès n'est créé par défaut. Appuyez sur le bouton WiFi configurable (`GPIO5` par défaut) pour créer le point d'accès local :
 
 ```text
 SSID: ESP32-HID-Config
