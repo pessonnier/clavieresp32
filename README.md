@@ -223,7 +223,7 @@ Séquences supportées :
 - `\cA` à `\cZ` : raccourcis Ctrl-A à Ctrl-Z, par exemple `\cC` pour Ctrl-C et `\cD` pour Ctrl-D ;
 - `\wA` à `\wZ` : raccourcis Win-A à Win-Z, par exemple `\wR` pour Win-R.
 
-Les changements sont mémorisés en flash avec `Preferences` et sont restaurés au prochain démarrage. Le nom du point d'accès WiFi est limité à 32 caractères ; son mot de passe doit contenir 8 à 63 caractères. Ces deux paramètres prennent effet à la prochaine activation du WiFi. Quand une paire est sélectionnée, le bouton physique écrit le second mot de cette paire. S'il n'y a aucune paire chargée, l'ancien texte manuel importé via `app.typeText` reste utilisé par compatibilité. Dans la sélection de paire, appuyer sur `Entrée` sauvegarde les paramètres puis écrit immédiatement le texte via le clavier HID. Le journal Web affiche les derniers événements depuis le démarrage.
+Les changements sont mémorisés en flash avec `Preferences` et sont restaurés au prochain démarrage. Le nom du point d'accès WiFi est limité à 32 caractères ; son mot de passe doit contenir 8 à 63 caractères. Ces deux paramètres prennent effet au prochain démarrage du WiFi. Quand une paire est sélectionnée, le bouton physique écrit le second mot de cette paire. S'il n'y a aucune paire chargée, il écrit le texte manuel. Dans la sélection de paire, appuyer sur `Entrée` sauvegarde les paramètres puis écrit immédiatement le texte via le clavier HID. Le journal Web affiche les derniers événements depuis le démarrage.
 
 La page Web permet aussi de mettre à jour le firmware par OTA en déposant le binaire PlatformIO :
 
