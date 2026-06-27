@@ -38,7 +38,8 @@ L'application doit rester utilisable sans outil externe apres flash :
   - `\e` : Echap ;
   - `\\` : antislash ;
   - `\^` : caret ;
-  - `\cA` a `\cZ` : Ctrl-A a Ctrl-Z.
+  - `\cA` a `\cZ` : Ctrl-A a Ctrl-Z ;
+  - `\wA` a `\wZ` : Win-A a Win-Z.
 
 ### Boutons physiques
 
@@ -52,7 +53,8 @@ Les boutons sont cables entre GPIO et GND. Les entrees utilisent `INPUT_PULLUP`.
   - saisit `actionButtonText` ;
   - valide avec Entree.
 - Bouton WiFi, par defaut GPIO5 :
-  - active ou coupe le point d'acces de configuration.
+  - active ou coupe le point d'acces de configuration ;
+  - le WiFi de configuration est eteint par defaut au demarrage.
 
 ### Interface Web
 
@@ -71,9 +73,8 @@ L'interface Web permet de modifier :
 - la commande du bouton action ;
 - le GPIO du bouton WiFi ;
 - l'activation et le texte de la demo de demarrage ;
-- le texte manuel d'ecriture ;
 - la paire selectionnee ;
-- la liste de paires via ajout manuel ou import de fichier ;
+- la liste de paires via ajout manuel, suppression ou import de fichier ;
 - le firmware via upload OTA.
 
 Elle affiche aussi :
@@ -97,8 +98,8 @@ app.apPass=esp32hid
 app.typePin=14
 app.actionPin=4
 app.wifiPin=5
-app.typeText=abc
-app.actionText=wt
+# Le bouton action lance Win+R, tape cette commande, puis valide avec Entree.
+app.actionText=notepad
 app.demoOn=0
 app.demoText=salut
 app.selectedPair=0
@@ -114,7 +115,7 @@ Cles supportees :
 - `app.actionPin` : GPIO du bouton action Win+R ;
 - `app.terminalPin` : ancien nom accepte pour compatibilite avec `app.actionPin` ;
 - `app.wifiPin` : GPIO du bouton WiFi ;
-- `app.typeText` : texte manuel d'ecriture ;
+- `app.typeText` : ancien texte manuel d'ecriture, encore accepte a l'import pour compatibilite ;
 - `app.actionText` : commande saisie apres `Win+R` ;
 - `app.demoOn` : activation de la demo de demarrage (`1`, `0`, `true`, `false`, `oui`, `non`) ;
 - `app.demoText` : texte de demo ;
@@ -180,7 +181,7 @@ Zones principales :
 3. La LED est eteinte.
 4. Le clavier, la souris et l'USB natif sont initialises.
 5. Le firmware attend `USB_ENUMERATION_DELAY_MS`.
-6. Le point d'acces Web demarre.
+6. Le firmware force le mode `WIFI_OFF` : aucun point d'acces Web ne demarre par defaut.
 7. Les etats initiaux des boutons sont lus.
 8. Un evenement de demarrage est ajoute au journal.
 
@@ -243,9 +244,9 @@ Note : la cle NVS `termPin` reste conservee pour compatibilite interne, meme si 
 
 1. Travailler dans `rawKeyForAzertyAsciiChar()`.
 2. Garder la difference entre lettres de controle et lettres affichees :
-   - `rawKeyForControlLetter()` utilise les codes HID physiques A-Z pour Ctrl ;
+   - `rawKeyForControlLetter()` utilise les codes HID physiques A-Z pour les raccourcis Ctrl/Win ;
    - `rawKeyForAzertyAsciiChar()` cible le caractere affiche en AZERTY.
-3. Tester au minimum minuscules, majuscules, chiffres, ponctuation, `\t`, `\r`, `\cC`, `\cD`.
+3. Tester au minimum minuscules, majuscules, chiffres, ponctuation, `\t`, `\r`, `\cC`, `\cD`, `\wR`.
 
 ## Invariants a respecter
 

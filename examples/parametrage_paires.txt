@@ -4,8 +4,8 @@ app.apPass=esp32hid
 app.typePin=14
 app.actionPin=4
 app.wifiPin=5
-app.typeText=abc
-app.actionText=wt
+# Exemple bouton action: Win+R, saisie de notepad, puis Entree.
+app.actionText=notepad
 app.demoOn=0
 app.demoText=salut
 app.selectedPair=0
@@ -17,5 +17,6 @@ tabulation=avant\tapres
 retour=ligne1\rligne2
 ctrl-c=\cC
 ctrl-d=\cD
+win-r=\wR
 echappement=\e
 caret=\^
